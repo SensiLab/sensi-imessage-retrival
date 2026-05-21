@@ -1,1 +1,4 @@
+openai
+pyobjc-framework-Contacts
+python-dotenv
 requests

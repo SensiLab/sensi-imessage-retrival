@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sensi.imessage-ingest</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/rtdbot/sensi-imessage-retrival/.venv/bin/python</string>
+    <string>/Users/rtdbot/sensi-imessage-retrival/ingest_imessages.py</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/rtdbot/sensi-imessage-retrival</string>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>23</integer>
+    <key>Minute</key>
+    <integer>50</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/rtdbot/sensi-imessage-retrival/logs/launchd.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/rtdbot/sensi-imessage-retrival/logs/launchd.err.log</string>
+</dict>
+</plist>

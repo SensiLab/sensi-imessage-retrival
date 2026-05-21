@@ -1,5 +1,11 @@
 
-logs/
 
+.DS_Store
+__pycache__/
+logs/
+Rowan
+data/
+
+.env
 *.json
 API.md

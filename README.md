@@ -67,7 +67,7 @@ For scheduled `launchd` runs, you may also need to grant Full Disk Access to the
 
 ### 5. Start the Sensi Memory server
 
-The Sensi Memory server must be running on `http://localhost:8000` before executing the script. See [API.md](API.md) for setup instructions.
+The Sensi Memory server must be running on `http://localhost:8000` before executing the script. See [sensi-embedding](https://github.com/SensiLab/sensi-embedding) for setup instructions.
 
 ## Usage
 
@@ -178,7 +178,6 @@ sensi-imessage-retrival/
 ├── utils.py              # Shared helpers (logging, vision, MIME constants)
 ├── .env.example          # Environment variable template
 ├── requirements.txt      # Minimal pip dependencies
-├── API.md                # Sensi Memory HTTP & MCP API reference
 ├── data/                 # Local JPEG store, organised by date (git-ignored)
 └── logs/                 # Runtime logs (git-ignored)
 ```

@@ -16,7 +16,7 @@ Sender phone numbers and emails are resolved to display names via macOS Contacts
 
 - macOS (uses `sips` for image conversion and `osascript` for Contacts lookup)
 - Python 3.11+
-- Sensi Memory server running on `http://localhost:8000` (see [API.md](API.md))
+- Sensi Memory server running on `http://localhost:8000` (see [sensi-embedding](https://github.com/SensiLab/sensi-embedding))
 - An OpenAI API key with access to `gpt-4o`
 - Full Disk Access for the Python runtime that will execute the script (interactive terminal runs and `launchd` background runs are treated differently by macOS)
 

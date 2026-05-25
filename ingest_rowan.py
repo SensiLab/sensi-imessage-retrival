@@ -65,18 +65,15 @@ def ingest_image(filepath: str) -> str:
         document_id = hashlib.sha256(f"rowan:{filename}".encode()).hexdigest()
 
         metadata = json.dumps({
-            "source":            "rowan",
-            "sender":            "rowan",
-            "filename":          filename,
-            "timestamp":         timestamp,
-            "filepath":          filepath,
-            "original_mime_type": mime_type,
+            "filename": filename,
         })
 
         upload_mime = "image/jpeg" if is_temp else mime_type
         upload_name = os.path.basename(upload_path)
 
         form_data: dict = {
+            "sender":      "rowan",
+            "source_path": filepath,
             "tags":        tags,
             "metadata":    metadata,
             "document_id": document_id,

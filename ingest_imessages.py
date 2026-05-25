@@ -373,15 +373,12 @@ def ingest_row(row: dict, ingested_ids: set[int], contact_cache: dict[str, str])
         document_id = hashlib.sha256(f"imessage:{message_id}".encode()).hexdigest()
 
         metadata = json.dumps({
-            "source":            "imessage",
-            "sender":            sender,
-            "message_id":        message_id,
-            "timestamp":         timestamp,
-            "filepath":          local_path,
-            "original_mime_type": mime_type,
+            "filename": os.path.basename(local_path),
         })
 
         form_data: dict = {
+            "sender":      sender,
+            "source_path": local_path,
             "tags":        tags,
             "metadata":    metadata,
             "document_id": document_id,

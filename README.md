@@ -5,7 +5,7 @@ A macOS script that pulls today's iMessage image attachments, generates natural-
 ## How it works
 
 1. Opens `~/Library/Messages/chat.db` in read-only mode and queries all image attachments sent or received in the configured look-back window (default: today only).
-2. Converts every image to JPEG using macOS `sips` and saves it permanently in `data/<date>/`. JPEG sources are copied directly; all other formats (HEIC, GIF, WebP, TIFF, etc.) are converted in-place.
+2. Converts every image to JPEG using macOS `sips` and saves it permanently in `<IMAGE_SAVE_DIR>/<date>/` (defaults to `data/<date>/`). JPEG sources are copied directly; all other formats (HEIC, GIF, WebP, TIFF, etc.) are converted in-place.
 3. Calls the OpenAI GPT-4o vision API to generate a natural-language description and comma-separated tags for each image.
 4. POSTs each JPEG to the Sensi Memory `/ingest/image` endpoint, attaching the description, tags, sender name, timestamp, and the local JPEG path as metadata.
 5. Tracks ingested message IDs in `.ingested_ids.json` to skip duplicates on re-runs. The state file resets automatically each day.
@@ -43,11 +43,16 @@ pip install requests python-dotenv openai
 cp .env.example .env
 ```
 
-Open `.env` and fill in your OpenAI API key:
+Open `.env` and fill in your values:
 
 ```
 OPENAI_API_KEY=sk-...
+
+# Optional: set this to save images outside the repo directory
+# IMAGE_SAVE_DIR=/absolute/path/to/your/image/store
 ```
+
+`IMAGE_SAVE_DIR` (optional) sets where JPEG images are stored on disk. If unset, images are saved to `data/` inside the repo. The same subdirectory structure applies either way: `<IMAGE_SAVE_DIR>/<YYYY-MM-DD>/<id>_<filename>.jpg`. The `source_path` stored in ChromaDB reflects the actual save location.
 
 If you want to disable OpenAI vision analysis, remove the `OPENAI_API_KEY` line from `.env` or leave it blank:
 
@@ -155,7 +160,7 @@ All supported formats are stored and uploaded as JPEG. The local copy in `data/`
 
 | Format | Handling |
 |---|---|
-| JPEG | Copied directly to `data/<date>/` as `.jpg` |
+| JPEG | Copied directly to `<IMAGE_SAVE_DIR>/<date>/` as `.jpg` |
 | PNG, HEIC/HEIF, GIF, WebP, TIFF, BMP, AVIF | Converted to JPEG via `sips` and saved as `.jpg` |
 | All other `image/*` types | Skipped with a warning |
 
@@ -169,6 +174,8 @@ Top-level constants in [ingest_imessages.py](ingest_imessages.py) can be adjuste
 | `CHAT_DB_PATH` | `~/Library/Messages/chat.db` | Path to the iMessage SQLite database |
 | `STATE_FILE` | `.ingested_ids.json` | Deduplication state (resets daily) |
 | `LOG_DIR` | `logs/` | Directory for dated log files |
+
+The image save directory is controlled by the `IMAGE_SAVE_DIR` environment variable in `.env` (see [Setup → Configure environment variables](#3-configure-environment-variables)).
 
 ## Project structure
 

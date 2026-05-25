@@ -48,7 +48,18 @@ API_BASE_URL      = "http://localhost:8000"
 INGEST_ENDPOINT   = f"{API_BASE_URL}/ingest/image"
 CHAT_DB_PATH      = os.path.expanduser("~/Library/Messages/chat.db")
 STATE_FILE        = os.path.join(os.path.dirname(__file__), ".ingested_ids.json")
-DATA_DIR          = os.path.join(os.path.dirname(__file__), "data")
+_env_data_dir     = os.environ.get("IMAGE_SAVE_DIR")
+if _env_data_dir:
+    if not os.path.exists(_env_data_dir):
+        _parent = os.path.dirname(_env_data_dir)
+        if not os.path.isdir(_parent):
+            raise SystemExit(
+                f"ERROR: IMAGE_SAVE_DIR '{_env_data_dir}' and its parent '{_parent}' do not exist."
+            )
+        os.makedirs(_env_data_dir)
+    DATA_DIR = _env_data_dir
+else:
+    DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 MAC_EPOCH_OFFSET  = 978307200  # seconds between Unix epoch (1970-01-01) and Mac epoch (2001-01-01)
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,8 @@
 openai
+Pillow
+pytesseract
+doclayout-yolo
+huggingface-hub
 pyobjc-framework-Contacts
 python-dotenv
 requests

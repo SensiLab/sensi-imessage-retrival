@@ -39,6 +39,15 @@ from utils import (
     CONVERTIBLE_MIMES,
 )
 
+from pipeline import (
+    classify_image,
+    screenshot_pipeline,
+    presentation_pipeline,
+    poster_pipeline,
+    book_pipeline,
+    other_pipeline,
+)
+
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -46,6 +55,7 @@ from utils import (
 
 API_BASE_URL      = "http://localhost:8000"
 INGEST_ENDPOINT   = f"{API_BASE_URL}/ingest/image"
+TEXT_INGEST_ENDPOINT = f"{API_BASE_URL}/ingest/text"
 CHAT_DB_PATH      = os.path.expanduser("~/Library/Messages/chat.db")
 STATE_FILE        = os.path.join(os.path.dirname(__file__), ".ingested_ids.json")
 _env_data_dir     = os.environ.get("IMAGE_SAVE_DIR")
@@ -339,6 +349,72 @@ def copy_image_to_local_store(src_path: str, attachment_id: int, date_str: str, 
     return dest_path
 
 
+def save_figure_to_disk(fig_bytes: bytes, attachment_id: int, date_str: str, index: int = 0) -> str:
+    """Save extracted figure bytes to DATA_DIR/<date_str>/<attachment_id>_fig_<index>.jpg."""
+    dest_dir = os.path.join(DATA_DIR, date_str)
+    os.makedirs(dest_dir, exist_ok=True)
+    dest_path = os.path.join(dest_dir, f"{attachment_id}_fig_{index}.jpg")
+    with open(dest_path, "wb") as f:
+        f.write(fig_bytes)
+    return dest_path
+
+
+def ingest_ocr_text(
+    text: str,
+    sender: str,
+    tags: str,
+    document_id_seed: str,
+    source_path: str,
+    timestamp: str,
+) -> None:
+    """POST OCR-extracted text to the /ingest/text endpoint."""
+    document_id = hashlib.sha256(f"{document_id_seed}:ocr".encode()).hexdigest()
+    payload = {
+        "text": text,
+        "sender": sender,
+        "tags": [t.strip() for t in tags.split(",") if t.strip()],
+        "document_id": document_id,
+        "metadata": {
+            "source_path": source_path,
+            "created_at": timestamp,
+        },
+    }
+    resp = requests.post(TEXT_INGEST_ENDPOINT, json=payload, timeout=30)
+    resp.raise_for_status()
+
+
+def _post_image(
+    file_path: str,
+    source_path: str,
+    sender: str,
+    tags: str,
+    description: str,
+    document_id: str,
+    metadata: dict,
+    object_path: str | None = None,
+) -> None:
+    """POST a JPEG image to the /ingest/image endpoint."""
+    form_data: dict = {
+        "sender":      sender,
+        "source_path": source_path,
+        "tags":        tags,
+        "metadata":    json.dumps(metadata),
+        "document_id": document_id,
+    }
+    if description:
+        form_data["text"] = description
+    if object_path:
+        form_data["object_path"] = object_path
+    with open(file_path, "rb") as img_file:
+        resp = requests.post(
+            INGEST_ENDPOINT,
+            files={"file": (os.path.basename(file_path), img_file, "image/jpeg")},
+            data=form_data,
+            timeout=30,
+        )
+    resp.raise_for_status()
+
+
 def ingest_row(row: dict, ingested_ids: set[int], contact_cache: dict[str, str]) -> str:
     """
     Process one database row.
@@ -375,40 +451,84 @@ def ingest_row(row: dict, ingested_ids: set[int], contact_cache: dict[str, str])
         logging.error("Failed to store attachment for message_id=%s: %s", message_id, exc)
         return "error"
 
+    sender = "me" if is_from_me == 1 else resolve_sender(sender_handle, contact_cache)
+    id_seed = f"imessage:{message_id}"
+    base_metadata = {"filename": os.path.basename(local_path)}
+
+    # Classify the image and run the appropriate pipeline
+    pipeline_ok = False
     try:
-        sender = "me" if is_from_me == 1 else resolve_sender(sender_handle, contact_cache)
-        tags, description = generate_tags_and_description(local_path, sender, timestamp)
+        logging.info("Classifying message_id=%s", message_id)
+        category = classify_image(local_path)
+        logging.info("[pipeline] message_id=%s category=%s", message_id, category)
 
-        # Stable document_id derived from the message rowid — prevents duplicate
-        # records if the script is restarted and the state file is lost
-        document_id = hashlib.sha256(f"imessage:{message_id}".encode()).hexdigest()
+        if category in ("presentation", "poster", "other"):
+            if category == "presentation":
+                _img_bytes, ocr_text = presentation_pipeline(local_path)
+            elif category == "poster":
+                _img_bytes, ocr_text = poster_pipeline(local_path)
+            else:
+                _img_bytes, ocr_text = other_pipeline(local_path)
+            tags, description = generate_tags_and_description(local_path, sender, timestamp)
+            document_id = hashlib.sha256(id_seed.encode()).hexdigest()
+            _post_image(local_path, local_path, sender, tags, description, document_id, base_metadata)
+            if ocr_text:
+                ingest_ocr_text(ocr_text, sender, tags, id_seed, local_path, timestamp)
+                logging.info("[pipeline] message_id=%s ingested OCR text (%d chars)", message_id, len(ocr_text))
 
-        metadata = json.dumps({
-            "filename": os.path.basename(local_path),
-        })
+        elif category == "screenshot":
+            img_bytes, ocr_text, is_original = screenshot_pipeline(local_path)
+            if is_original:
+                tags, description = generate_tags_and_description(local_path, sender, timestamp)
+                document_id = hashlib.sha256(id_seed.encode()).hexdigest()
+                _post_image(local_path, local_path, sender, tags, description, document_id, base_metadata)
+            else:
+                fig_path = save_figure_to_disk(img_bytes, row["attachment_id"], date_str, index=0)
+                logging.info("[pipeline] message_id=%s saved figure 0 → %s", message_id, fig_path)
+                tags, description = generate_tags_and_description(fig_path, sender, timestamp)
+                document_id = hashlib.sha256(f"{id_seed}:fig:0".encode()).hexdigest()
+                _post_image(fig_path, local_path, sender, tags, description, document_id,
+                            {"filename": os.path.basename(fig_path)}, object_path=fig_path)
+            if ocr_text:
+                ingest_ocr_text(ocr_text, sender, tags, id_seed, local_path, timestamp)
+                logging.info("[pipeline] message_id=%s ingested OCR text (%d chars)", message_id, len(ocr_text))
 
-        form_data: dict = {
-            "sender":      sender,
-            "source_path": local_path,
-            "tags":        tags,
-            "metadata":    metadata,
-            "document_id": document_id,
-        }
-        if description:
-            form_data["text"] = description
+        elif category == "book":
+            figures_list, ocr_text, is_original = book_pipeline(local_path)
+            if is_original:
+                tags, description = generate_tags_and_description(local_path, sender, timestamp)
+                document_id = hashlib.sha256(id_seed.encode()).hexdigest()
+                _post_image(local_path, local_path, sender, tags, description, document_id, base_metadata)
+            else:
+                tags, description = "", ""
+                for i, fig_bytes in enumerate(figures_list):
+                    fig_path = save_figure_to_disk(fig_bytes, row["attachment_id"], date_str, index=i)
+                    logging.info("[pipeline] message_id=%s saved figure %d → %s", message_id, i, fig_path)
+                    tags, description = generate_tags_and_description(fig_path, sender, timestamp)
+                    document_id = hashlib.sha256(f"{id_seed}:fig:{i}".encode()).hexdigest()
+                    _post_image(fig_path, local_path, sender, tags, description, document_id,
+                                {"filename": os.path.basename(fig_path)}, object_path=fig_path)
+            if ocr_text:
+                ingest_ocr_text(ocr_text, sender, tags, id_seed, local_path, timestamp)
+                logging.info("[pipeline] message_id=%s ingested OCR text (%d chars)", message_id, len(ocr_text))
 
-        with open(local_path, "rb") as img_file:
-            resp = requests.post(
-                INGEST_ENDPOINT,
-                files={"file": (os.path.basename(local_path), img_file, "image/jpeg")},
-                data=form_data,
-                timeout=30,
-            )
-        resp.raise_for_status()
+        pipeline_ok = True
 
     except requests.RequestException as exc:
         logging.error("HTTP error for message_id=%s: %s", message_id, exc)
         return "error"
+    except Exception as exc:
+        logging.warning("[pipeline] message_id=%s pipeline failed, falling back to default: %s", message_id, exc)
+
+    # Fallback: ingest original image without pipeline processing
+    if not pipeline_ok:
+        try:
+            tags, description = generate_tags_and_description(local_path, sender, timestamp)
+            document_id = hashlib.sha256(id_seed.encode()).hexdigest()
+            _post_image(local_path, local_path, sender, tags, description, document_id, base_metadata)
+        except requests.RequestException as exc:
+            logging.error("HTTP error for message_id=%s: %s", message_id, exc)
+            return "error"
 
     ingested_ids.add(message_id)
     save_state(ingested_ids)

@@ -8,4 +8,8 @@ data/
 
 .env
 *.json
-API.md
+*.jpg
+*.jpeg
+*.png
+
+image_decription_test.py

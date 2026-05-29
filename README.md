@@ -37,6 +37,14 @@ source .venv/bin/activate
 pip install requests python-dotenv openai
 ```
 
+If you want to run OCR text extraction in `image_decription_test.py`, install the extra Python dependencies and native Tesseract binary:
+
+```bash
+pip install -r requirements.txt
+brew install tesseract
+which tesseract && tesseract --version
+```
+
 ### 3. Configure environment variables
 
 ```bash

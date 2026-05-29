@@ -1,14 +1,19 @@
 # sensi-imessage-retrival
 
-A macOS script that pulls today's iMessage image attachments, generates natural-language descriptions and tags using GPT-4o vision, and ingests them into the [Sensi Memory](https://github.com/anthropics) vector database so they become searchable by semantic meaning.
+A macOS script that pulls today's iMessage image attachments, classifies them, extracts text and figures using specialised pipelines, and ingests everything into the [Sensi Memory](https://github.com/anthropics) vector database so it becomes searchable by semantic meaning.
 
 ## How it works
 
 1. Opens `~/Library/Messages/chat.db` in read-only mode and queries all image attachments sent or received in the configured look-back window (default: today only).
 2. Converts every image to JPEG using macOS `sips` and saves it permanently in `<IMAGE_SAVE_DIR>/<date>/` (defaults to `data/<date>/`). JPEG sources are copied directly; all other formats (HEIC, GIF, WebP, TIFF, etc.) are converted in-place.
-3. Calls the OpenAI GPT-4o vision API to generate a natural-language description and comma-separated tags for each image.
-4. POSTs each JPEG to the Sensi Memory `/ingest/image` endpoint, attaching the description, tags, sender name, timestamp, and the local JPEG path as metadata.
-5. Tracks ingested message IDs in `.ingested_ids.json` to skip duplicates on re-runs. The state file resets automatically each day.
+3. Classifies each image into one of five categories using GPT-4o: `screenshot`, `presentation`, `poster`, `book`, or `other`.
+4. Routes the image through the matching pipeline (`pipeline.py`), which runs macOS native OCR and, for screenshots and book pages, uses a layout model (DocLayout-YOLO) to detect and extract embedded figures:
+   - **screenshot / book**: if meaningful figures are found, each is saved to `<IMAGE_SAVE_DIR>/<date>/` as `<id>_fig_<n>.jpg` and ingested individually with `object_path` pointing to the figure and `source_path` pointing back to the original screenshot. If no figures are found, the original image is ingested as-is.
+   - **presentation / poster / other**: the original image is ingested as-is.
+5. Calls the OpenAI GPT-4o vision API to generate a natural-language description and tags for each ingested image (original or extracted figure).
+6. POSTs each image to the Sensi Memory `/ingest/image` endpoint with its description, tags, sender name, timestamp, and file paths.
+7. If OCR text was extracted, POSTs it separately to `/ingest/text` so the text content is independently searchable. The text record's metadata includes `source_path` linking it back to the original image.
+8. Tracks ingested message IDs in `.ingested_ids.json` to skip duplicates on re-runs. The state file resets automatically each day.
 
 Sender phone numbers and emails are resolved to display names via macOS Contacts (AppleScript). macOS will prompt for Contacts permission on the first run.
 
@@ -34,16 +39,10 @@ source .venv/bin/activate
 ### 2. Install dependencies
 
 ```bash
-pip install requests python-dotenv openai
-```
-
-If you want to run OCR text extraction in `image_decription_test.py`, install the extra Python dependencies and native Tesseract binary:
-
-```bash
 pip install -r requirements.txt
-brew install tesseract
-which tesseract && tesseract --version
 ```
+
+This installs all required packages including `openai`, `ocrmac`, `doclayout-yolo`, and `Pillow` used by the image classification and pipeline code.
 
 ### 3. Configure environment variables
 
@@ -189,10 +188,12 @@ The image save directory is controlled by the `IMAGE_SAVE_DIR` environment varia
 
 ```
 sensi-imessage-retrival/
-├── ingest_imessages.py   # Main script
+├── ingest_imessages.py   # Main iMessage ingestion script
+├── ingest_rowan.py       # Batch folder ingestion script (test database)
+├── pipeline.py           # Image classification and processing pipelines
 ├── utils.py              # Shared helpers (logging, vision, MIME constants)
 ├── .env.example          # Environment variable template
-├── requirements.txt      # Minimal pip dependencies
+├── requirements.txt      # Python dependencies
 ├── data/                 # Local JPEG store, organised by date (git-ignored)
 └── logs/                 # Runtime logs (git-ignored)
 ```
